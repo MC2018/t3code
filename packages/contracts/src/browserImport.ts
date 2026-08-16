@@ -16,7 +16,16 @@ import { Schema } from "effect";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
 
-export const BROWSER_IMPORT_SOURCE_IDS = ["helium"] as const;
+export const BROWSER_IMPORT_SOURCE_IDS = [
+  "chrome",
+  "edge",
+  "brave",
+  "vivaldi",
+  "opera",
+  "arc",
+  "helium",
+  "firefox",
+] as const;
 
 export const BrowserImportSourceId = Schema.Literals(BROWSER_IMPORT_SOURCE_IDS);
 export type BrowserImportSourceId = typeof BrowserImportSourceId.Type;

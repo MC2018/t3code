@@ -2107,7 +2107,24 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     };
   });
 
-  const readUntrackedReviewDiffs = Effect.fn("readUntrackedReviewDiffs")(function* (cwd: string) {
+  const readUntrackedReviewDiffs = Effect.fn("readUntrackedReviewDiffs")(function* (
+    requestedCwd: string,
+  ) {
+    // `git ls-files --others` reports paths relative to the working directory
+    // while `git diff` reports them relative to the repository root. Running
+    // both from the root is what keeps tracked and untracked files in the same
+    // coordinate system; otherwise an untracked file loses its leading
+    // directories and names a path that does not exist.
+    const toplevel = yield* runGitStdout(
+      "GitVcsDriver.readUntrackedReviewDiffs.toplevel",
+      requestedCwd,
+      ["rev-parse", "--show-toplevel"],
+    ).pipe(
+      Effect.map((value) => value.trim()),
+      Effect.orElseSucceed(() => ""),
+    );
+    const cwd = toplevel.length > 0 ? toplevel : requestedCwd;
+
     const untrackedResult = yield* executeGit(
       "GitVcsDriver.readUntrackedReviewDiffs.list",
       cwd,

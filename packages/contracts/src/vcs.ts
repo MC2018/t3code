@@ -44,6 +44,42 @@ export const VcsListWorkspaceFilesResult = Schema.Struct({
 });
 export type VcsListWorkspaceFilesResult = typeof VcsListWorkspaceFilesResult.Type;
 
+/**
+ * How a repository ended up inside a workspace. `root` is the repository the
+ * workspace path itself resolves to, `submodule` is registered with the root
+ * repository, and `nested` is an independent clone that just happens to live
+ * under the workspace.
+ */
+export const VcsWorkspaceRepositoryLinkage = Schema.Literals(["root", "submodule", "nested"]);
+export type VcsWorkspaceRepositoryLinkage = typeof VcsWorkspaceRepositoryLinkage.Type;
+
+/**
+ * One VCS root inside a workspace. `relativePath` is the workspace-relative
+ * POSIX path (empty for the workspace root) and doubles as the prefix diffs
+ * from this repository are reported under.
+ */
+export const VcsWorkspaceRepository = Schema.Struct({
+  root: TrimmedNonEmptyString,
+  relativePath: Schema.String,
+  name: TrimmedNonEmptyString,
+  kind: VcsDriverKind,
+  linkage: VcsWorkspaceRepositoryLinkage,
+  isPrimary: Schema.Boolean,
+});
+export type VcsWorkspaceRepository = typeof VcsWorkspaceRepository.Type;
+
+export const VcsListWorkspaceRepositoriesInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  refresh: Schema.optional(Schema.Boolean),
+});
+export type VcsListWorkspaceRepositoriesInput = typeof VcsListWorkspaceRepositoriesInput.Type;
+
+export const VcsListWorkspaceRepositoriesResult = Schema.Struct({
+  repositories: Schema.Array(VcsWorkspaceRepository),
+  truncated: Schema.Boolean,
+});
+export type VcsListWorkspaceRepositoriesResult = typeof VcsListWorkspaceRepositoriesResult.Type;
+
 export const VcsRemote = Schema.Struct({
   name: TrimmedNonEmptyString,
   url: TrimmedNonEmptyString,

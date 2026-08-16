@@ -189,7 +189,11 @@ import {
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
-import { VcsError } from "./vcs.ts";
+import {
+  VcsError,
+  VcsListWorkspaceRepositoriesInput,
+  VcsListWorkspaceRepositoriesResult,
+} from "./vcs.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -213,6 +217,7 @@ export const WS_METHODS = {
   vcsPull: "vcs.pull",
   vcsRefreshStatus: "vcs.refreshStatus",
   vcsListRefs: "vcs.listRefs",
+  vcsListRepositories: "vcs.listRepositories",
   vcsCreateWorktree: "vcs.createWorktree",
   vcsRemoveWorktree: "vcs.removeWorktree",
   vcsCreateRef: "vcs.createRef",
@@ -700,6 +705,12 @@ export const WsVcsListRefsRpc = Rpc.make(WS_METHODS.vcsListRefs, {
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
 });
 
+export const WsVcsListRepositoriesRpc = Rpc.make(WS_METHODS.vcsListRepositories, {
+  payload: VcsListWorkspaceRepositoriesInput,
+  success: VcsListWorkspaceRepositoriesResult,
+  error: Schema.Union([VcsError, EnvironmentAuthorizationError]),
+});
+
 export const WsVcsCreateWorktreeRpc = Rpc.make(WS_METHODS.vcsCreateWorktree, {
   payload: VcsCreateWorktreeInput,
   success: VcsCreateWorktreeResult,
@@ -1031,6 +1042,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsGitResolvePullRequestRpc,
   WsGitPreparePullRequestThreadRpc,
   WsVcsListRefsRpc,
+  WsVcsListRepositoriesRpc,
   WsVcsCreateWorktreeRpc,
   WsVcsRemoveWorktreeRpc,
   WsVcsCreateRefRpc,

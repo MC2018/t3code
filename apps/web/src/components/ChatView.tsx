@@ -74,7 +74,7 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
-import { useDiffPanelStore } from "../diffPanelStore";
+import { selectThreadRepositoryRoot, useDiffPanelStore } from "../diffPanelStore";
 import {
   collapseExpandedComposerCursor,
   parseStandaloneComposerSlashCommand,
@@ -2627,13 +2627,20 @@ function ChatViewContent(props: ChatViewProps) {
     return byUserMessageId;
   }, [inferredCheckpointTurnCountByTurnId, timelineEntries, turnDiffSummaryByAssistantMessageId]);
 
-  const gitCwd = activeProject
+  const workspaceGitCwd = activeProject
     ? projectScriptCwd({
         project: { cwd: activeProject.workspaceRoot },
         worktreePath: activeThread?.worktreePath ?? null,
       })
     : null;
-  const gitStatusCwd = activeThread?.worktreePath ?? gitCwd;
+  // Source-control actions belong to a repository. When the diff panel is
+  // scoped to one repository of a multi-repository workspace, committing and
+  // pushing follow it, so what you act on is what you are looking at.
+  const selectedDiffRepositoryRoot = useDiffPanelStore((state) =>
+    selectThreadRepositoryRoot(state.repositoryRootByThreadKey, activeThreadRef),
+  );
+  const gitCwd = selectedDiffRepositoryRoot ?? workspaceGitCwd;
+  const gitStatusCwd = selectedDiffRepositoryRoot ?? activeThread?.worktreePath ?? workspaceGitCwd;
   const gitStatusQuery = useEnvironmentQuery(
     gitStatusCwd === null
       ? null

@@ -18,10 +18,16 @@ const DEFAULT_WORKING_TREE_SELECTION: DiffPanelSelection = { kind: "unstaged" };
 interface DiffPanelStoreState {
   byThreadKey: Record<string, DiffPanelSelection>;
   branchBaseRefByThreadKey: Record<string, string | null>;
+  /**
+   * Which repository of a multi-repository workspace the panel is scoped to,
+   * or null for the combined view across all of them.
+   */
+  repositoryRootByThreadKey: Record<string, string | null>;
   diffRenderMode: DiffRenderMode;
   setDiffRenderMode: (mode: DiffRenderMode) => void;
   selectGitScope: (ref: ScopedThreadRef, scope: "branch" | "unstaged") => void;
   selectBranchBaseRef: (ref: ScopedThreadRef, baseRef: string | null) => void;
+  selectRepositoryRoot: (ref: ScopedThreadRef, repositoryRoot: string | null) => void;
   selectTurn: (ref: ScopedThreadRef, turnId: TurnId, filePath?: string) => void;
   reconcileTurnSelection: (ref: ScopedThreadRef, availableTurnIds: ReadonlyArray<TurnId>) => void;
   removeThread: (ref: ScopedThreadRef) => void;
@@ -37,6 +43,7 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
     (set) => ({
       byThreadKey: {},
       branchBaseRefByThreadKey: {},
+      repositoryRootByThreadKey: {},
       diffRenderMode: "stacked",
       setDiffRenderMode: (diffRenderMode) => set({ diffRenderMode }),
       selectGitScope: (ref, scope) =>
@@ -74,6 +81,30 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
               ...state.branchBaseRefByThreadKey,
               [threadKey]: normalizedBaseRef,
             },
+          };
+        }),
+      selectRepositoryRoot: (ref, repositoryRoot) =>
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          const normalizedRoot = repositoryRoot?.trim() || null;
+          if ((state.repositoryRootByThreadKey[threadKey] ?? null) === normalizedRoot) {
+            return state;
+          }
+          // A base ref names a branch in the repository it was picked from, so
+          // it does not survive a move to a different one.
+          const { [threadKey]: _clearedBaseRef, ...branchBaseRefByThreadKey } =
+            state.branchBaseRefByThreadKey;
+          const previous = state.byThreadKey[threadKey];
+          return {
+            repositoryRootByThreadKey: {
+              ...state.repositoryRootByThreadKey,
+              [threadKey]: normalizedRoot,
+            },
+            branchBaseRefByThreadKey,
+            byThreadKey:
+              previous?.kind === "branch"
+                ? { ...state.byThreadKey, [threadKey]: { kind: "branch", baseRef: null } }
+                : state.byThreadKey,
           };
         }),
       selectTurn: (ref, turnId, filePath) =>
@@ -114,13 +145,19 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
       removeThread: (ref) =>
         set((state) => {
           const threadKey = scopedThreadKey(ref);
-          if (!(threadKey in state.byThreadKey) && !(threadKey in state.branchBaseRefByThreadKey)) {
+          if (
+            !(threadKey in state.byThreadKey) &&
+            !(threadKey in state.branchBaseRefByThreadKey) &&
+            !(threadKey in state.repositoryRootByThreadKey)
+          ) {
             return state;
           }
           const { [threadKey]: _removed, ...byThreadKey } = state.byThreadKey;
           const { [threadKey]: _removedBaseRef, ...branchBaseRefByThreadKey } =
             state.branchBaseRefByThreadKey;
-          return { byThreadKey, branchBaseRefByThreadKey };
+          const { [threadKey]: _removedRepositoryRoot, ...repositoryRootByThreadKey } =
+            state.repositoryRootByThreadKey;
+          return { byThreadKey, branchBaseRefByThreadKey, repositoryRootByThreadKey };
         }),
     }),
     {
@@ -132,11 +169,20 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
       partialize: (state) => ({
         byThreadKey: state.byThreadKey,
         branchBaseRefByThreadKey: state.branchBaseRefByThreadKey,
+        repositoryRootByThreadKey: state.repositoryRootByThreadKey,
         diffRenderMode: state.diffRenderMode,
       }),
     },
   ),
 );
+
+export function selectThreadRepositoryRoot(
+  repositoryRootByThreadKey: Record<string, string | null>,
+  ref: ScopedThreadRef | null | undefined,
+): string | null {
+  if (!ref) return null;
+  return repositoryRootByThreadKey[scopedThreadKey(ref)] ?? null;
+}
 
 export function selectThreadDiffPanelSelection(
   byThreadKey: Record<string, DiffPanelSelection>,

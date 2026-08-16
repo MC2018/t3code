@@ -53,6 +53,16 @@ T3 Code works with the platforms your team already uses:
 - Works on GitHub, GitLab, and Bitbucket. Azure DevOps takes a new title and description; its
   comments stay read-only here, as they already were
 
+### Work Across Several Repositories in One Project
+
+Some projects are a folder of repositories rather than a single one — a superproject with submodules, or a directory holding several clones side by side. T3 Code reviews all of them.
+
+- The diff view shows every repository in the project at once. File paths are prefixed with the repository's folder, so `ShuffullApp/app/index.tsx` reads the way it looks on disk
+- Turn diffs and checkpoints cover every repository too, so work an agent does inside a submodule shows up under **Latest turn** and is restored with it
+- A project folder that is not itself a repository still works. The repositories inside it are what get reviewed
+- Use the scope dropdown → **Repository** to focus on one repository. Committing, pushing, branch switching, and the comparison branch picker all follow that choice, so you act on exactly what you are looking at
+- Pick **All repositories** to go back to the combined view. Because each repository has its own branch, the combined view compares each against its own base and hides the branch picker
+
 ### Know Your Setup at a Glance
 
 The **Source Control settings** page shows you exactly what's connected:

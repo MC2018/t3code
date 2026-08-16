@@ -28,6 +28,18 @@ The root filesystem path for a project. In [the orchestration model][1], it is t
 
 A Git worktree used as an isolated workspace for a thread. If a thread has a `worktreePath` in [the contracts][1], it runs there instead of in the main working tree. Git operations live behind the VCS driver contract in `apps/server/src/vcs/VcsDriver.ts`, implemented by [GitVcsDriverCore.ts][3].
 
+#### Workspace repository
+
+One VCS root inside a workspace. A workspace root can be a repository, hold registered submodules, hold unrelated clones, or be no repository at all, so "the project's repository" is a list rather than a single path. Discovery lives in [VcsWorkspaceRepositories.ts][25], typed as `VcsWorkspaceRepository` in [the contracts][1]. Each entry carries a `relativePath`: empty for the workspace root repository, otherwise the workspace-relative directory.
+
+#### Repository scope
+
+Which workspace repository a source-control surface acts on. Diff previews and checkpoints span every repository by default; passing `repositoryRoot` to a review diff preview, or picking a repository in the diff panel, narrows the surface to one. Reads span, writes are scoped.
+
+#### Diff path prefix
+
+The workspace-relative directory git renders into a repository's patch paths via `--src-prefix`/`--dst-prefix`, so patches from several repositories concatenate into one valid patch. `findRepositoryForDiffPath` in `packages/shared/src/git.ts` maps a prefixed path back to its repository by longest matching prefix.
+
 ### Thread timeline
 
 #### Thread
@@ -118,7 +130,7 @@ A point-in-time view of state. The word is used in multiple layers, including or
 
 ### Checkpointing
 
-Checkpointing captures workspace state over time so the app can diff turns and restore earlier points. The main pieces are [CheckpointStore.ts][19], [CheckpointDiffQuery.ts][20], and [CheckpointReactor.ts][6].
+Checkpointing captures workspace state over time so the app can diff turns and restore earlier points. The main pieces are [CheckpointStore.ts][19], [CheckpointDiffQuery.ts][20], and [CheckpointReactor.ts][6]. A checkpoint spans every workspace repository: [CheckpointStore.ts][19] writes the same ref in each one, because a superproject records a submodule only as a commit id and would otherwise capture none of the work inside it.
 
 #### Checkpoint
 
@@ -179,3 +191,4 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [22]: ../../apps/server/src/checkpointing/Utils.ts
 [23]: ../../apps/server/src/checkpointing/Diffs.ts
 [24]: ./overview.md
+[25]: ../../apps/server/src/vcs/VcsWorkspaceRepositories.ts

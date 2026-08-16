@@ -16,6 +16,7 @@ import {
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
+import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
@@ -36,6 +37,7 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
+  const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const git = yield* GitVcsDriver.GitVcsDriver;
 
   const canonicalizePath = (value: string) => {
@@ -62,17 +64,34 @@ export const make = Effect.gen(function* () {
     return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
   };
 
+  /**
+   * The roots a review may read from: the server's own working directory, the
+   * worktrees it manages, and every registered project. A project can live
+   * anywhere on disk — the server's working directory is wherever it happened
+   * to be launched from and says nothing about which projects the user added —
+   * so the project list is what makes a path legitimate.
+   */
+  const allowedReviewRoots = Effect.fn("ReviewService.allowedReviewRoots")(function* () {
+    const projectRoots = yield* projectionSnapshotQuery.getShellSnapshot().pipe(
+      Effect.map((snapshot) => snapshot.projects.map((project) => project.workspaceRoot)),
+      Effect.orElseSucceed(() => [] as ReadonlyArray<string>),
+    );
+    return yield* Effect.all(
+      [config.cwd, config.worktreesDir, ...projectRoots].map(canonicalizePath),
+      { concurrency: "unbounded" },
+    );
+  });
+
   const assertWorkspaceBoundCwd = Effect.fn("ReviewService.assertWorkspaceBoundCwd")(function* (
     operation: "ReviewService.getDiffPreview" | "ReviewService.getDiffFileContents",
     cwd: string,
   ) {
-    const [candidate, workspaceRoot, worktreesRoot] = yield* Effect.all([
+    const [candidate, allowedRoots] = yield* Effect.all([
       canonicalizePath(cwd),
-      canonicalizePath(config.cwd),
-      canonicalizePath(config.worktreesDir),
+      allowedReviewRoots(),
     ]);
 
-    if (isWithinRoot(candidate, workspaceRoot) || isWithinRoot(candidate, worktreesRoot)) {
+    if (allowedRoots.some((root) => isWithinRoot(candidate, root))) {
       return;
     }
 
@@ -81,8 +100,8 @@ export const make = Effect.gen(function* () {
       cwd,
       detail:
         operation === "ReviewService.getDiffPreview"
-          ? "Review diff preview cwd must stay within the configured workspace root."
-          : "Review diff file contents cwd must stay within the configured workspace root.",
+          ? "Review diff preview cwd must stay within a registered project or the configured workspace root."
+          : "Review diff file contents cwd must stay within a registered project or the configured workspace root.",
     });
   });
 

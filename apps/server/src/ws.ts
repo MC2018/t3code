@@ -94,6 +94,7 @@ import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import { readWorkflowScript } from "./orchestration/workflowScriptQuery.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
+import * as VcsWorkspaceRepositories from "./vcs/VcsWorkspaceRepositories.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
@@ -367,6 +368,7 @@ const makeWsRpcLayer = (
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+      const vcsWorkspaceRepositories = yield* VcsWorkspaceRepositories.VcsWorkspaceRepositories;
       const terminalManager = yield* TerminalManager.TerminalManager;
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
@@ -1987,6 +1989,10 @@ const makeWsRpcLayer = (
           ),
         [WS_METHODS.vcsListRefs]: (input) =>
           observeRpcEffect(WS_METHODS.vcsListRefs, gitWorkflow.listRefs(input), {
+            "rpc.aggregate": "vcs",
+          }),
+        [WS_METHODS.vcsListRepositories]: (input) =>
+          observeRpcEffect(WS_METHODS.vcsListRepositories, vcsWorkspaceRepositories.list(input), {
             "rpc.aggregate": "vcs",
           }),
         [WS_METHODS.vcsCreateWorktree]: (input) =>

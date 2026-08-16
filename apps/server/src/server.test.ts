@@ -136,6 +136,7 @@ import * as VcsDriver from "./vcs/VcsDriver.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
+import * as VcsWorkspaceRepositories from "./vcs/VcsWorkspaceRepositories.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
@@ -583,6 +584,10 @@ const buildAppUnderTest = (options?: {
     const vcsProvisioningLayer = VcsProvisioningService.layer.pipe(
       Layer.provide(vcsDriverRegistryLayer),
     );
+    const vcsWorkspaceRepositoriesLayer = VcsWorkspaceRepositories.layer.pipe(
+      Layer.provide(gitVcsDriverLayer),
+      Layer.provide(vcsDriverRegistryLayer),
+    );
     const reviewLayer = options?.layers?.reviewService
       ? Layer.mock(ReviewService.ReviewService)({
           ...options.layers.reviewService,
@@ -590,6 +595,7 @@ const buildAppUnderTest = (options?: {
       : ReviewService.layer.pipe(
           Layer.provideMerge(gitVcsDriverLayer),
           Layer.provide(vcsDriverRegistryLayer),
+          Layer.provide(vcsWorkspaceRepositoriesLayer),
         );
     const vcsStatusBroadcasterLayer = options?.layers?.vcsStatusBroadcaster
       ? Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
@@ -727,7 +733,7 @@ const buildAppUnderTest = (options?: {
       Layer.provide(gitVcsDriverLayer),
       Layer.provide(gitWorkflowLayer),
       Layer.provide(reviewLayer),
-      Layer.provide(vcsProvisioningLayer),
+      Layer.provide(Layer.mergeAll(vcsProvisioningLayer, vcsWorkspaceRepositoriesLayer)),
       Layer.provide(
         Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({
           ...options?.layers?.sourceControlRepositoryService,
@@ -5312,6 +5318,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                     diff: "base-diff",
                     diffHash: "hash-base",
                     truncated: false,
+                  },
+                ],
+                repositories: [
+                  {
+                    root: input.cwd,
+                    relativePath: "",
+                    name: "repo",
+                    baseRef: "main",
+                    headRef: "feature/demo",
                   },
                 ],
               }),

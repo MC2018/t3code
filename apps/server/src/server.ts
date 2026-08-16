@@ -75,6 +75,7 @@ import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
+import * as VcsWorkspaceRepositories from "./vcs/VcsWorkspaceRepositories.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
@@ -299,14 +300,20 @@ const SourceControlRepositoryServiceLayerLive = SourceControlRepositoryService.l
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
 );
 
+const VcsWorkspaceRepositoriesLayerLive = VcsWorkspaceRepositories.layer.pipe(
+  Layer.provide(VcsDriverRegistryLayerLive),
+);
+
 const ReviewLayerLive = ReviewService.layer.pipe(
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(VcsDriverRegistryLayerLive),
+  Layer.provideMerge(VcsWorkspaceRepositoriesLayerLive),
 );
 
 const VcsLayerLive = Layer.empty.pipe(
   Layer.provideMerge(VcsProjectConfig.layer),
   Layer.provideMerge(VcsDriverRegistryLayerLive),
+  Layer.provideMerge(VcsWorkspaceRepositoriesLayerLive),
   Layer.provideMerge(VcsProvisioningService.layer.pipe(Layer.provide(VcsDriverRegistryLayerLive))),
   Layer.provideMerge(GitWorkflowLayerLive),
   Layer.provideMerge(ReviewLayerLive),
@@ -316,7 +323,12 @@ const VcsLayerLive = Layer.empty.pipe(
 
 const CheckpointingLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CheckpointDiffQuery.layer),
-  Layer.provideMerge(CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistryLayerLive))),
+  Layer.provideMerge(
+    CheckpointStore.layer.pipe(
+      Layer.provide(VcsDriverRegistryLayerLive),
+      Layer.provide(VcsWorkspaceRepositoriesLayerLive),
+    ),
+  ),
 );
 
 const PortScannerLayerLive = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));

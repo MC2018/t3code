@@ -26,6 +26,7 @@ import * as BrowserSession from "../BrowserSession.ts";
 import { ChromiumCookieReadError, readChromiumCookies } from "./ChromiumCookies.ts";
 import type { ImportedCookie } from "./CookieDatabase.ts";
 import { FirefoxCookieReadError, readFirefoxCookies } from "./FirefoxCookies.ts";
+import { readSafariCookies, SafariCookieReadError } from "./SafariCookies.ts";
 import {
   BROWSER_IMPORT_SOURCES,
   cookieDatabasePath,
@@ -164,19 +165,21 @@ export const make = Effect.gen(function* BrowserImportMake() {
     // shape that `Effect.catchTags` could not tell apart.
     const read: Effect.Effect<
       ReadonlyArray<ImportedCookie>,
-      ChromiumCookieReadError | FirefoxCookieReadError,
+      ChromiumCookieReadError | FirefoxCookieReadError | SafariCookieReadError,
       FileSystem.FileSystem | Path.Path | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
-    > = definition.engine === "firefox"
-      ? readFirefoxCookies(databasePath)
-      : readChromiumCookies({
-          cookieDatabasePath: databasePath,
-          // Only Windows reads it; the other platforms take their key from a
-          // credential store and ignore the path entirely.
-          localStatePath: localStatePath(definition, pathContext) ?? "",
-          keychainService: definition.keychainService,
-          keychainAccount: definition.keychainAccount,
-          platform,
-        });
+    > = definition.engine === "safari"
+      ? readSafariCookies(databasePath)
+      : definition.engine === "firefox"
+        ? readFirefoxCookies(databasePath)
+        : readChromiumCookies({
+            cookieDatabasePath: databasePath,
+            // Only Windows reads it; the other platforms take their key from a
+            // credential store and ignore the path entirely.
+            localStatePath: localStatePath(definition, pathContext) ?? "",
+            keychainService: definition.keychainService,
+            keychainAccount: definition.keychainAccount,
+            platform,
+          });
 
     const cookies = yield* read.pipe(
       Effect.scoped,

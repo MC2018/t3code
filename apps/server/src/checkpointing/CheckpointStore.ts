@@ -21,6 +21,7 @@ import * as Layer from "effect/Layer";
 import type { CheckpointStoreError } from "./Errors.ts";
 import type { VcsCheckpointOps } from "../vcs/VcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import * as VcsWorkspaceRepositories from "../vcs/VcsWorkspaceRepositories.ts";
 
 export interface CaptureCheckpointInput {
   readonly cwd: string;
@@ -98,6 +99,7 @@ export class CheckpointStore extends Context.Service<
 
 export const make = Effect.gen(function* () {
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
+  const workspaceRepositories = yield* VcsWorkspaceRepositories.VcsWorkspaceRepositories;
 
   const resolveCheckpoints = Effect.fn("CheckpointStore.resolveCheckpoints")(function* (
     operation: string,
@@ -114,47 +116,156 @@ export const make = Effect.gen(function* () {
     return handle.driver.checkpoints satisfies VcsCheckpointOps;
   });
 
-  const isGitRepository: CheckpointStore["Service"]["isGitRepository"] = (cwd) =>
-    vcsRegistry
-      .detect({ cwd, requestedKind: "git" })
-      .pipe(Effect.map((repository) => repository !== null));
+  /**
+   * The repositories a checkpoint spans. A superproject records a submodule as
+   * a commit id, so a checkpoint taken only at the workspace root captures none
+   * of the work inside it — every repository needs its own ref.
+   */
+  const resolveCheckpointTargets = Effect.fn("CheckpointStore.resolveCheckpointTargets")(function* (
+    cwd: string,
+  ) {
+    const workspace = yield* workspaceRepositories
+      .list({ cwd })
+      .pipe(Effect.orElseSucceed(() => ({ repositories: [], truncated: false }) as const));
+    const targets = workspace.repositories.filter((repository) => repository.kind === "git");
+    return targets.length > 0
+      ? targets
+      : [
+          {
+            root: cwd,
+            relativePath: "",
+            name: cwd,
+            kind: "git" as const,
+            linkage: "root" as const,
+            isPrimary: true,
+          },
+        ];
+  });
+
+  const isGitRepository: CheckpointStore["Service"]["isGitRepository"] = Effect.fn(
+    "isGitRepository",
+  )(function* (cwd) {
+    const detected = yield* vcsRegistry.detect({ cwd, requestedKind: "git" });
+    if (detected !== null) {
+      return true;
+    }
+    // A workspace that is not itself a repository still has checkpointable work
+    // when it holds repositories.
+    const targets = yield* workspaceRepositories
+      .list({ cwd })
+      .pipe(Effect.orElseSucceed(() => ({ repositories: [], truncated: false }) as const));
+    return targets.repositories.some((repository) => repository.kind === "git");
+  });
 
   const captureCheckpoint: CheckpointStore["Service"]["captureCheckpoint"] = Effect.fn(
     "captureCheckpoint",
   )(function* (input) {
-    const checkpoints = yield* resolveCheckpoints("CheckpointStore.captureCheckpoint", input.cwd);
-    return yield* checkpoints.captureCheckpoint(input);
+    const targets = yield* resolveCheckpointTargets(input.cwd);
+    yield* Effect.forEach(
+      targets,
+      (target) =>
+        Effect.gen(function* () {
+          const checkpoints = yield* resolveCheckpoints(
+            "CheckpointStore.captureCheckpoint",
+            target.root,
+          );
+          return yield* checkpoints.captureCheckpoint({
+            cwd: target.root,
+            checkpointRef: input.checkpointRef,
+          });
+        }),
+      { concurrency: 4, discard: true },
+    );
   });
 
   const hasCheckpointRef: CheckpointStore["Service"]["hasCheckpointRef"] = Effect.fn(
     "hasCheckpointRef",
   )(function* (input) {
-    const checkpoints = yield* resolveCheckpoints("CheckpointStore.hasCheckpointRef", input.cwd);
-    return yield* checkpoints.hasCheckpointRef(input);
+    const targets = yield* resolveCheckpointTargets(input.cwd);
+    const primary = targets.find((target) => target.isPrimary) ?? targets[0];
+    const checkpoints = yield* resolveCheckpoints(
+      "CheckpointStore.hasCheckpointRef",
+      primary?.root ?? input.cwd,
+    );
+    return yield* checkpoints.hasCheckpointRef({
+      cwd: primary?.root ?? input.cwd,
+      checkpointRef: input.checkpointRef,
+    });
   });
 
   const restoreCheckpoint: CheckpointStore["Service"]["restoreCheckpoint"] = Effect.fn(
     "restoreCheckpoint",
   )(function* (input) {
-    const checkpoints = yield* resolveCheckpoints("CheckpointStore.restoreCheckpoint", input.cwd);
-    return yield* checkpoints.restoreCheckpoint(input);
+    const targets = yield* resolveCheckpointTargets(input.cwd);
+    const restored = yield* Effect.forEach(
+      targets,
+      (target) =>
+        Effect.gen(function* () {
+          const checkpoints = yield* resolveCheckpoints(
+            "CheckpointStore.restoreCheckpoint",
+            target.root,
+          );
+          return yield* checkpoints.restoreCheckpoint({
+            ...input,
+            cwd: target.root,
+          });
+        }),
+      { concurrency: 1 },
+    );
+    return restored.some(Boolean);
   });
 
   const diffCheckpoints: CheckpointStore["Service"]["diffCheckpoints"] = Effect.fn(
     "diffCheckpoints",
   )(function* (input) {
-    const checkpoints = yield* resolveCheckpoints("CheckpointStore.diffCheckpoints", input.cwd);
-    return yield* checkpoints.diffCheckpoints(input);
+    const targets = yield* resolveCheckpointTargets(input.cwd);
+    const diffs = yield* Effect.forEach(
+      targets,
+      (target) => {
+        const diff = Effect.gen(function* () {
+          const checkpoints = yield* resolveCheckpoints(
+            "CheckpointStore.diffCheckpoints",
+            target.root,
+          );
+          return yield* checkpoints.diffCheckpoints({
+            ...input,
+            cwd: target.root,
+            ...(target.relativePath.length > 0 ? { pathPrefix: target.relativePath } : {}),
+          });
+        });
+        // A repository cloned after the checkpoint was taken holds no ref for
+        // it, which is an absence rather than a failed diff. The primary
+        // repository is different: nothing there to diff means the turn's
+        // checkpoint is genuinely unusable, and callers need to hear about it.
+        return target.isPrimary ? diff : diff.pipe(Effect.orElseSucceed(() => ""));
+      },
+      { concurrency: 4 },
+    );
+    return diffs
+      .map((diff) => diff.trimEnd())
+      .filter((diff) => diff.length > 0)
+      .join("\n");
   });
 
   const deleteCheckpointRefs: CheckpointStore["Service"]["deleteCheckpointRefs"] = Effect.fn(
     "deleteCheckpointRefs",
   )(function* (input) {
-    const checkpoints = yield* resolveCheckpoints(
-      "CheckpointStore.deleteCheckpointRefs",
-      input.cwd,
+    const targets = yield* resolveCheckpointTargets(input.cwd);
+    yield* Effect.forEach(
+      targets,
+      (target) =>
+        Effect.gen(function* () {
+          const checkpoints = yield* resolveCheckpoints(
+            "CheckpointStore.deleteCheckpointRefs",
+            target.root,
+          );
+          return yield* checkpoints.deleteCheckpointRefs({
+            cwd: target.root,
+            checkpointRefs: input.checkpointRefs,
+          });
+        }).pipe(Effect.ignore),
+      { concurrency: 4, discard: true },
     );
-    return yield* checkpoints.deleteCheckpointRefs(input);
   });
 
   return CheckpointStore.of({

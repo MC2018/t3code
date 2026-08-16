@@ -33,6 +33,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
 import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../../vcs/VcsProcess.ts";
+import * as VcsWorkspaceRepositories from "../../vcs/VcsWorkspaceRepositories.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { CheckpointReactorLive } from "./CheckpointReactor.ts";
@@ -340,7 +341,14 @@ describe("CheckpointReactor", () => {
       Layer.provideMerge(RuntimeReceiptBusLive),
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
       Layer.provideMerge(vcsStatusBroadcasterLayer),
-      Layer.provideMerge(CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistry.layer))),
+      Layer.provideMerge(
+        CheckpointStore.layer.pipe(
+          Layer.provide(VcsDriverRegistry.layer),
+          Layer.provide(
+            VcsWorkspaceRepositories.layer.pipe(Layer.provide(VcsDriverRegistry.layer)),
+          ),
+        ),
+      ),
       Layer.provideMerge(
         WorkspaceEntries.layer.pipe(
           Layer.provide(WorkspacePaths.layer),

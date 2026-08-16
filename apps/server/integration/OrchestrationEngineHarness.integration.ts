@@ -81,6 +81,7 @@ import * as VcsDriverRegistry from "../src/vcs/VcsDriverRegistry.ts";
 import { VcsStatusBroadcaster } from "../src/vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../src/git/GitWorkflowService.ts";
 import * as VcsProcess from "../src/vcs/VcsProcess.ts";
+import * as VcsWorkspaceRepositories from "../src/vcs/VcsWorkspaceRepositories.ts";
 import * as AgentAwarenessRelay from "../src/relay/AgentAwarenessRelay.ts";
 
 const decodeCodexSettings = Schema.decodeEffect(CodexSettings);
@@ -301,7 +302,10 @@ export const makeOrchestrationIntegrationHarness = (
         );
     const providerRegistryLayer = makeProviderRegistryLayer();
 
-    const checkpointStoreLayer = CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistry.layer));
+    const checkpointStoreLayer = CheckpointStore.layer.pipe(
+      Layer.provide(VcsDriverRegistry.layer),
+      Layer.provide(VcsWorkspaceRepositories.layer.pipe(Layer.provide(VcsDriverRegistry.layer))),
+    );
     const projectionSnapshotQueryLayer = OrchestrationProjectionSnapshotQueryLive;
     const runtimeServicesLayer = Layer.mergeAll(
       projectionSnapshotQueryLayer,

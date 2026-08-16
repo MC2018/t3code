@@ -1960,6 +1960,8 @@ validation.layer("ProviderServiceLive validation", (it) => {
 });
 
 describe("agent browser access", () => {
+  const revokedThreads: Array<ThreadId> = [];
+
   const startSessionWith = (enableAgentBrowserAccess: boolean, threadId: ThreadId) =>
     Effect.gen(function* () {
       const issued: Array<ThreadId> = [];
@@ -1980,6 +1982,7 @@ describe("agent browser access", () => {
             issued.push(request.threadId);
             return undefined;
           }),
+        revokeMcpCredential: (revoked) => Effect.sync(() => void revokedThreads.push(revoked)),
       }).pipe(
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
@@ -2015,6 +2018,20 @@ describe("agent browser access", () => {
       const issued = yield* startSessionWith(false, asThreadId("thread-browser-off"));
 
       assert.deepEqual(issued, []);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("revokes an already-issued credential when access is off", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-browser-revoke");
+      revokedThreads.length = 0;
+
+      yield* startSessionWith(false, threadId);
+
+      // Clearing the in-memory map is not enough: a token issued before the
+      // toggle flipped stays valid against `/mcp` for its whole liveness
+      // window, and later turns refresh it.
+      assert.deepEqual(revokedThreads, [threadId]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

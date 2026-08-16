@@ -90,10 +90,7 @@ describe("BrowserImport.importCookies", () => {
       const { importer, root } = yield* withImporter();
       // The lock Chromium leaves while it is running, dangling target and
       // all. This must stop the import before it ever asks the keychain.
-      yield* fileSystem.symlink(
-        "host-that-does-not-exist-1234",
-        `${root}/SingletonLock`,
-      );
+      yield* fileSystem.symlink("host-that-does-not-exist-1234", `${root}/SingletonLock`);
 
       const error = yield* importer
         .importCookies({

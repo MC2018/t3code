@@ -22,9 +22,9 @@ import * as Scope from "effect/Scope";
 import { HostProcessExecutablePath, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 import * as BrowserSession from "../BrowserSession.ts";
-import { readChromiumCookies } from "./ChromiumCookies.ts";
+import { ChromiumCookieReadError, readChromiumCookies } from "./ChromiumCookies.ts";
 import type { ImportedCookie } from "./CookieDatabase.ts";
-import { readFirefoxCookies } from "./FirefoxCookies.ts";
+import { FirefoxCookieReadError, readFirefoxCookies } from "./FirefoxCookies.ts";
 import {
   BROWSER_IMPORT_SOURCES,
   cookieDatabasePath,
@@ -98,7 +98,8 @@ export const make = Effect.gen(function* BrowserImportMake() {
         name: definition.name,
         // Listing profiles touches the source's own files, so skip it when the
         // source is unusable anyway.
-        profiles: unavailable === undefined ? yield* listSourceProfiles(definition, pathContext) : [],
+        profiles:
+          unavailable === undefined ? yield* listSourceProfiles(definition, pathContext) : [],
         ...(unavailable === undefined ? {} : { unavailable }),
       } satisfies BrowserImportSource;
     }),
@@ -159,23 +160,23 @@ export const make = Effect.gen(function* BrowserImportMake() {
       });
     }
 
+    // Both branches fail with a tagged error carrying a `reason`, so the union
+    // stays structurally identifiable rather than collapsing to an anonymous
+    // shape that `Effect.catchTags` could not tell apart.
     const read: Effect.Effect<
       ReadonlyArray<ImportedCookie>,
-      { readonly reason: BrowserImportFailureReason },
+      ChromiumCookieReadError | FirefoxCookieReadError,
       FileSystem.FileSystem | Path.Path | Scope.Scope
-    > =
-      definition.engine === "firefox"
-        ? readFirefoxCookies(databasePath).pipe(
-            Effect.mapError((cause) => ({ reason: "readFailed" as const, cause })),
-          )
-        : readChromiumCookies({
-            cookieDatabasePath: databasePath,
-            // Only reached on macOS: `unavailableReason` rejects Chromium
-            // elsewhere until those key stores are implemented.
-            keychainService: definition.keychainService ?? "",
-            keychainAccount: definition.keychainAccount ?? "",
-            platform,
-          });
+    > = definition.engine === "firefox"
+      ? readFirefoxCookies(databasePath)
+      : readChromiumCookies({
+          cookieDatabasePath: databasePath,
+          // Only reached on macOS: `unavailableReason` rejects Chromium
+          // elsewhere until those key stores are implemented.
+          keychainService: definition.keychainService ?? "",
+          keychainAccount: definition.keychainAccount ?? "",
+          platform,
+        });
 
     const cookies = yield* read.pipe(
       Effect.scoped,

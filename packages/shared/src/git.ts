@@ -285,3 +285,49 @@ export function applyGitStatusStreamEvent(
       return mergeGitStatusParts(toLocalStatusPart(current), event.remote);
   }
 }
+
+/**
+ * Minimum a caller needs to attribute a workspace-relative path to the
+ * repository it came from. Satisfied by both `VcsWorkspaceRepository` and the
+ * repository entries on a review diff preview.
+ */
+export interface WorkspaceRepositoryPathScope {
+  readonly relativePath: string;
+}
+
+/**
+ * Finds the repository a workspace-relative diff path belongs to.
+ *
+ * Diff paths from a multi-repository review carry the owning repository's
+ * directory as a prefix, so the longest matching prefix wins: a repository
+ * nested inside another must beat its parent.
+ */
+export function findRepositoryForDiffPath<Repository extends WorkspaceRepositoryPathScope>(
+  repositories: ReadonlyArray<Repository>,
+  diffPath: string,
+): Repository | null {
+  let match: Repository | null = null;
+  for (const repository of repositories) {
+    const prefix = repository.relativePath;
+    if (prefix.length === 0) {
+      // The workspace root repository owns anything no nested repository claims.
+      if (match === null) match = repository;
+      continue;
+    }
+    if (!diffPath.startsWith(`${prefix}/`)) continue;
+    if (match === null || prefix.length > match.relativePath.length) {
+      match = repository;
+    }
+  }
+  return match;
+}
+
+/** Strips a repository's workspace-relative prefix off a diff path. */
+export function toRepositoryRelativeDiffPath(
+  repository: WorkspaceRepositoryPathScope,
+  diffPath: string,
+): string {
+  const prefix = repository.relativePath;
+  if (prefix.length === 0) return diffPath;
+  return diffPath.startsWith(`${prefix}/`) ? diffPath.slice(prefix.length + 1) : diffPath;
+}

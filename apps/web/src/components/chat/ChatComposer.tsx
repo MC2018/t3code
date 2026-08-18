@@ -199,6 +199,9 @@ import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
+import { ComposerVoiceButton } from "./ComposerVoiceButton";
+import { useVoiceAvailability } from "~/voice/useVoiceAvailability";
+import { useVoiceInput } from "~/voice/useVoiceInput";
 import {
   BotIcon,
   CircleAlertIcon,
@@ -2452,6 +2455,29 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
 
+  // Dictation appends to the draft rather than sending, so the user still reads
+  // the transcript before it goes to the agent.
+  const isVoiceAvailable = useVoiceAvailability();
+  const voiceInput = useVoiceInput(
+    (text) => {
+      // Do not focus the editor here. insertComposerTextAtEnd focuses on the next
+      // frame, once the new value has synced into the editor; focusing now would
+      // push the editor's pre-dictation snapshot back through onChange and
+      // silently overwrite the transcript.
+      if (insertComposerTextAtEnd(text, { ensureLeadingBoundary: true })) {
+        return;
+      }
+      toastManager.add({
+        type: "error",
+        title: "Unable to add dictation",
+        description: "The composer is busy; try again once it is ready.",
+      });
+    },
+    (description) => {
+      toastManager.add({ type: "error", title: "Dictation failed", description });
+    },
+  );
+
   // File-tree drags land as mentions. Handled in the capture phase so the
   // editor never sees the drop; the load-bearing rules (native stop, "move"
   // effect, no eager focus) live in makeComposerMentionDragHandlers.
@@ -3211,6 +3237,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 }
                 className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
               >
+                {isVoiceAvailable ? (
+                  <ComposerVoiceButton
+                    state={voiceInput.state}
+                    disabled={
+                      isConnecting ||
+                      environmentUnavailable !== null ||
+                      noProviderAvailable ||
+                      projectSelectionRequired
+                    }
+                    preserveComposerFocusOnPointerDown={isMobileViewport}
+                    onToggle={voiceInput.toggle}
+                  />
+                ) : null}
                 <ComposerFooterPrimaryActions
                   compact={isComposerPrimaryActionsCompact}
                   activeContextWindow={activeContextWindow}

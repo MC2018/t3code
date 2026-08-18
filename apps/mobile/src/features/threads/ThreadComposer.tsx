@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Platform,
   Pressable,
@@ -52,6 +53,9 @@ import {
   ComposerToolbarRow,
   ComposerToolbarScroller,
 } from "../../components/ComposerToolbar";
+import { useSavedRemoteConnection } from "../../state/use-remote-environment-registry";
+import { useVoiceAvailability } from "../voice/useVoiceAvailability";
+import { useVoiceInput } from "../voice/useVoiceInput";
 import { ControlPill } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
@@ -287,6 +291,42 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const wasExpandedBeforePreviewRef = useRef(false);
   const inFlightThreadIdsRef = useRef(new Set<string>());
   const { onExpandedChange } = props;
+
+  // Dictation transcribes on the environment's machine, not the phone. Only
+  // bearer-authenticated connections are supported: a relay/DPoP connection
+  // needs a per-request signed proof, which this raw upload path does not build.
+  const savedConnection = useSavedRemoteConnection(props.environmentId);
+  const voiceConnection = useMemo(
+    () =>
+      savedConnection !== null &&
+      savedConnection.authenticationMethod === "bearer" &&
+      savedConnection.httpBaseUrl.length > 0
+        ? { httpBaseUrl: savedConnection.httpBaseUrl, bearerToken: savedConnection.bearerToken }
+        : null,
+    [savedConnection],
+  );
+  const isVoiceAvailable = useVoiceAvailability({
+    environmentId: props.environmentId,
+    connection: voiceConnection,
+  });
+  const draftMessageRef = useRef(props.draftMessage);
+  draftMessageRef.current = props.draftMessage;
+  const voiceInput = useVoiceInput({
+    connection: voiceConnection,
+    // Appends to the draft rather than sending, so the transcript is read before
+    // the agent sees it.
+    onTranscript: useCallback(
+      (text: string) => {
+        const existing = draftMessageRef.current;
+        const separator = existing.length > 0 && !/\s$/.test(existing) ? " " : "";
+        props.onChangeDraftMessage(`${existing}${separator}${text}`);
+      },
+      [props.onChangeDraftMessage],
+    ),
+    onError: useCallback((message: string) => {
+      Alert.alert("Dictation failed", message);
+    }, []),
+  });
 
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
   const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
@@ -862,6 +902,18 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   onPress={() => void props.onPickDraftImages()}
                   showChevron={false}
                 />
+                {isVoiceAvailable ? (
+                  <ComposerToolbarButton
+                    accessibilityLabel={
+                      voiceInput.state === "recording" ? "Stop dictation" : "Start dictation"
+                    }
+                    icon={voiceInput.state === "recording" ? "stop.fill" : "mic"}
+                    variant={voiceInput.state === "recording" ? "danger" : undefined}
+                    disabled={voiceInput.state === "transcribing"}
+                    onPress={voiceInput.toggle}
+                    showChevron={false}
+                  />
+                ) : null}
                 <ComposerInlineControl
                   accessibilityLabel="Model and reasoning settings"
                   emphasized

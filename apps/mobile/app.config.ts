@@ -8,6 +8,14 @@ type AppVariant = "development" | "preview" | "production";
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
 
+/**
+ * iOS exposes a single NSMicrophoneUsageDescription, written by whichever
+ * permission plugin runs last. Every plugin that touches the key shares this
+ * string so none of them can clear what another one needs.
+ */
+const MICROPHONE_USAGE_DESCRIPTION =
+  "Allow T3 Code to use the microphone so you can dictate messages into the composer.";
+
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
 
@@ -293,12 +301,21 @@ const config: ExpoConfig = {
       "expo-camera",
       {
         cameraPermission: "Allow T3 Code to access your camera so you can scan pairing QR codes.",
-        microphonePermission: false,
+        // iOS exposes one microphone usage string, so every plugin that writes the
+        // key must agree: passing `false` here deletes it and dictation crashes on
+        // first use. The camera itself still records no audio (recordAudioAndroid).
+        microphonePermission: MICROPHONE_USAGE_DESCRIPTION,
         barcodeScannerEnabled: true,
         recordAudioAndroid: false,
       },
     ],
-    ["expo-image-picker", { photosPermission: false, microphonePermission: false }],
+    // Adds RECORD_AUDIO on Android. The iOS usage description is set directly in
+    // ios.infoPlist above, because this plugin drops the option.
+    "expo-audio",
+    [
+      "expo-image-picker",
+      { photosPermission: false, microphonePermission: MICROPHONE_USAGE_DESCRIPTION },
+    ],
     [
       "expo-splash-screen",
       {

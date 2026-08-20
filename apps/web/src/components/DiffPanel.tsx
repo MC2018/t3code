@@ -293,6 +293,26 @@ export default function DiffPanel({
       : null,
   );
   const refreshBranchDiffPreview = branchDiffPreview.refresh;
+
+  // The picker reports every repository, but the panel's own preview is scoped
+  // to the selected one and therefore only carries that repository's patch.
+  // Fetch the unscoped preview purely for the counts, and only while the menu is
+  // open, so browsing repositories costs nothing until the user asks to.
+  const [isDiffMenuOpen, setIsDiffMenuOpen] = useState(false);
+  const needsWorkspaceWidePreview =
+    isDiffMenuOpen && hasMultipleRepositories && selectedRepository !== null;
+  const workspaceDiffPreview = useEnvironmentQuery(
+    needsWorkspaceWidePreview && selectedTurnId === null && activeThread && activeCwd
+      ? reviewEnvironment.diffPreview({
+          environmentId: activeThread.environmentId,
+          input: {
+            cwd: activeCwd,
+            ...(selectedBaseRef ? { baseRef: selectedBaseRef } : {}),
+            ignoreWhitespace: diffIgnoreWhitespace,
+          },
+        })
+      : null,
+  );
   const canRefreshGitDiff =
     isGitRepo && selectedTurnId === null && activeThread != null && activeCwd != null;
   const activeThreadRefreshKey = routeThreadRef
@@ -433,11 +453,20 @@ export default function DiffPanel({
       }),
     );
   }, [renderablePatch]);
-  // Counted from the patch already on screen, so a row can never disagree with
-  // the diff that selecting it produces.
+  // Count from the workspace-wide preview when the panel is scoped, and from the
+  // panel's own preview when it is not: either way the patch covers every
+  // repository and reflects the scope currently on screen.
+  const repositoryStatsPatch = (() => {
+    const wanted = selectedGitScope === "unstaged" ? "working-tree" : "branch-range";
+    const source =
+      selectedRepository === null
+        ? branchDiffPreview.data?.sources.find((entry) => entry.kind === wanted)
+        : workspaceDiffPreview.data?.sources.find((entry) => entry.kind === wanted);
+    return source?.diff ?? "";
+  })();
   const repositoryDiffStats = useMemo(
-    () => computeRepositoryDiffStats(renderableFiles, workspaceRepositories),
-    [renderableFiles, workspaceRepositories],
+    () => computeRepositoryDiffStats(repositoryStatsPatch, workspaceRepositories),
+    [repositoryStatsPatch, workspaceRepositories],
   );
 
   const renderableFileEntries = useMemo(
@@ -554,7 +583,7 @@ export default function DiffPanel({
   const headerRow = (
     <>
       <div className="flex min-w-0 flex-1 items-center gap-3 [-webkit-app-region:no-drag]">
-        <DropdownMenu>
+        <DropdownMenu open={isDiffMenuOpen} onOpenChange={setIsDiffMenuOpen}>
           <DropdownMenuTrigger
             className="inline-flex h-6 max-w-full items-center gap-1 rounded-md bg-accent px-2 text-xs font-medium text-accent-foreground outline-none transition-colors hover:bg-accent/80 focus-visible:ring-2 focus-visible:ring-ring"
             aria-label={`Diff scope: ${selectedScopeLabel}`}

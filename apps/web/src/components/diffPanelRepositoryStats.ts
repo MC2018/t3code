@@ -1,20 +1,30 @@
 /**
  * Per-repository change counts for the diff panel's repository picker.
  *
- * Derived from the patch the panel has already parsed rather than asked of the
- * server, which keeps the numbers consistent with what selecting that
- * repository actually shows: same scope, same base ref, same truncation, and no
- * extra git work or websocket payload.
+ * Counted straight from the unified patch text rather than from the parsed,
+ * highlighted render model: the picker only needs totals, and parsing a patch
+ * for display is far more expensive than scanning it for `+`/`-` lines.
  */
 import type { VcsWorkspaceRepository } from "@t3tools/contracts";
-import type { FileDiffMetadata } from "@pierre/diffs/types";
-
-import { getDiffLineStat, resolveFileDiffPath } from "../lib/diffRendering";
 
 export interface RepositoryDiffStat {
   readonly filesChanged: number;
   readonly additions: number;
   readonly deletions: number;
+}
+
+const DIFF_HEADER = "diff --git ";
+
+/**
+ * Pulls the new-side path out of `diff --git a/x b/x`. Git quotes paths
+ * containing spaces, in which case the unquoted halves cannot be split
+ * reliably; those files still count, they just fall back to the workspace root.
+ */
+function readHeaderPath(line: string): string | null {
+  const rest = line.slice(DIFF_HEADER.length);
+  const bIndex = rest.lastIndexOf(" b/");
+  if (bIndex === -1) return null;
+  return rest.slice(bIndex + 3);
 }
 
 /**
@@ -39,34 +49,40 @@ function findOwningRepository(
 }
 
 /**
- * Counts changes per repository root. Repositories with no files in the loaded
- * patch are absent rather than zeroed, so callers can tell "no changes" apart
- * from "not covered by this patch" — the latter happens whenever the panel is
- * scoped to a single repository.
+ * Counts changes per repository root. Repositories with no files in the patch
+ * are absent rather than zeroed, so callers can tell "no changes" apart from
+ * "not covered by this patch".
  */
 export function computeRepositoryDiffStats(
-  files: ReadonlyArray<FileDiffMetadata>,
+  patch: string,
   repositories: ReadonlyArray<VcsWorkspaceRepository>,
 ): ReadonlyMap<string, RepositoryDiffStat> {
-  const filesByRoot = new Map<string, FileDiffMetadata[]>();
-  for (const file of files) {
-    const owner = findOwningRepository(resolveFileDiffPath(file), repositories);
-    if (owner === undefined) continue;
-    const bucket = filesByRoot.get(owner.root);
-    if (bucket === undefined) filesByRoot.set(owner.root, [file]);
-    else bucket.push(file);
+  const totals = new Map<string, { filesChanged: number; additions: number; deletions: number }>();
+  let current: string | null = null;
+
+  const totalsFor = (root: string) => {
+    const existing = totals.get(root);
+    if (existing !== undefined) return existing;
+    const created = { filesChanged: 0, additions: 0, deletions: 0 };
+    totals.set(root, created);
+    return created;
+  };
+
+  for (const line of patch.split("\n")) {
+    if (line.startsWith(DIFF_HEADER)) {
+      const path = readHeaderPath(line);
+      current = path === null ? null : (findOwningRepository(path, repositories)?.root ?? null);
+      if (current !== null) totalsFor(current).filesChanged += 1;
+      continue;
+    }
+    if (current === null) continue;
+    // `+++`/`---` are file headers, not content, and `--` ends the patch body.
+    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) totalsFor(current).additions += 1;
+    else if (line.startsWith("-")) totalsFor(current).deletions += 1;
   }
 
-  const stats = new Map<string, RepositoryDiffStat>();
-  for (const [root, ownedFiles] of filesByRoot) {
-    const lineStat = getDiffLineStat(ownedFiles);
-    stats.set(root, {
-      filesChanged: ownedFiles.length,
-      additions: lineStat.additions,
-      deletions: lineStat.deletions,
-    });
-  }
-  return stats;
+  return totals;
 }
 
 /** Renders as `12 files · +340 −87`, using a true minus sign to match the diff gutter. */

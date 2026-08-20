@@ -24,6 +24,11 @@ upstream-worthy subset of those fixes, rewritten for a PR against upstream rathe
 so it conflicts with the feature branch that already solves the same thing through the repository
 discovery service. Keep it for upstreaming; do not merge it here.
 
+**Repository change counts.** The diff panel's repository picker shows files changed and lines added
+or removed per repository. Derived on the client from the patch already parsed for display, so it
+adds no git work, no websocket payload, and no contract field — and the counts cannot disagree with
+the diff that selecting a repository produces.
+
 The work is deliberately concentrated in new files so rebases stay cheap. Only these upstream files
 are touched:
 
@@ -34,6 +39,7 @@ are touched:
 | `apps/web/src/environments/primary/httpLayer.ts`      | `isSameOriginBrowserPrimary` made exported            |
 | `apps/web/src/components/chat/ChatComposer.tsx`       | imports, two hook calls, and the button in the footer |
 | `docs/README.md`                                      | one index line                                        |
+| `apps/web/src/components/DiffPanel.tsx`               | import, one `useMemo`, and the picker row stat        |
 | `apps/mobile/package.json`                            | adds `expo-audio`                                     |
 | `apps/mobile/app.config.ts`                           | microphone permission (see note below)                |
 | `apps/mobile/src/components/AppSymbol.tsx`            | adds the `mic` symbol                                 |
@@ -45,6 +51,7 @@ Everything else lives in files upstream does not have:
 - `apps/web/src/voice/` — recording hook, availability probe, API client
 - `apps/web/src/components/chat/ComposerVoiceButton.tsx`
 - `apps/mobile/src/features/voice/` — recording hook, availability probe, API client
+- `apps/web/src/components/diffPanelRepositoryStats.ts` — per-repository counts and formatting
 - `docs/user/dictation.md`
 
 ## Two mobile traps worth remembering

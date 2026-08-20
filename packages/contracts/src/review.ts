@@ -7,6 +7,11 @@ export const ReviewDiffPreviewInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   baseRef: Schema.optional(TrimmedNonEmptyString),
   ignoreWhitespace: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Restricts the preview to one repository of a multi-repository workspace.
+   * Without it the preview covers every repository under `cwd`.
+   */
+  repositoryRoot: Schema.optional(TrimmedNonEmptyString),
 });
 export type ReviewDiffPreviewInput = typeof ReviewDiffPreviewInput.Type;
 
@@ -42,10 +47,27 @@ export const ReviewDiffFileContentsResult = Schema.Struct({
 });
 export type ReviewDiffFileContentsResult = typeof ReviewDiffFileContentsResult.Type;
 
+/**
+ * A repository contributing to a preview. In a single-repository workspace the
+ * one entry has an empty `relativePath` and the diffs carry no path prefix; with
+ * several repositories every diff path is prefixed with the owning entry's
+ * `relativePath`, so clients resolve a file back to its repository by longest
+ * matching prefix.
+ */
+export const ReviewDiffPreviewRepository = Schema.Struct({
+  root: TrimmedNonEmptyString,
+  relativePath: Schema.String,
+  name: TrimmedNonEmptyString,
+  baseRef: Schema.NullOr(TrimmedNonEmptyString),
+  headRef: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type ReviewDiffPreviewRepository = typeof ReviewDiffPreviewRepository.Type;
+
 export const ReviewDiffPreviewResult = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   generatedAt: Schema.DateTimeUtc,
   sources: Schema.Array(ReviewDiffPreviewSource),
+  repositories: Schema.Array(ReviewDiffPreviewRepository),
 });
 export type ReviewDiffPreviewResult = typeof ReviewDiffPreviewResult.Type;
 

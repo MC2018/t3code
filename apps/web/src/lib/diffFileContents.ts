@@ -10,8 +10,10 @@ import type {
   PullRequestRef,
   ReviewDiffFileContentsInput,
   ReviewDiffFileContentsResult,
+  ReviewDiffPreviewRepository,
   ReviewDiffPreviewSourceKind,
 } from "@t3tools/contracts";
+import { findRepositoryForDiffPath, toRepositoryRelativeDiffPath } from "@t3tools/shared/git";
 
 import { resolveFileDiffPath } from "./diffRendering";
 
@@ -23,6 +25,12 @@ interface GitDiffFileContentsSource {
   readonly headRef: string | null;
   /** The comparison identity Pierre carries into its hydrated render cache. */
   readonly cacheKey: string;
+  /**
+   * Repositories the preview was stitched from. With more than one, a file's
+   * contents have to be read from the repository that owns it rather than from
+   * the workspace root.
+   */
+  readonly repositories?: ReadonlyArray<ReviewDiffPreviewRepository>;
 }
 
 interface PullRequestDiffFileContentsSource {
@@ -81,16 +89,36 @@ export function createGitDiffFileContentsLoader<E>(
   source: GitDiffFileContentsSource,
 ): FileDiffContentsLoader {
   return createDiffFileContentsLoader(async ({ changeType, oldPath, newPath }) => {
+    // Git has to run inside the repository that owns the file: the workspace
+    // root may hold several repositories, or may not be a repository at all.
+    const repository = findRepositoryForDiffPath(source.repositories ?? [], newPath);
+    const target = repository
+      ? {
+          cwd: repository.root,
+          // Working-tree expansion compares against that repository's HEAD, so
+          // only a branch comparison wants the repository's own refs.
+          baseRef: source.sourceKind === "branch-range" ? repository.baseRef : source.baseRef,
+          headRef: source.sourceKind === "branch-range" ? repository.headRef : source.headRef,
+          oldPath: toRepositoryRelativeDiffPath(repository, oldPath),
+          newPath: toRepositoryRelativeDiffPath(repository, newPath),
+        }
+      : {
+          cwd: source.cwd,
+          baseRef: source.baseRef,
+          headRef: source.headRef,
+          oldPath,
+          newPath,
+        };
     const result = await getDiffFileContents({
       environmentId: source.environmentId,
       input: {
-        cwd: source.cwd,
+        cwd: target.cwd,
         sourceKind: source.sourceKind,
         changeType,
-        baseRef: source.baseRef,
-        headRef: source.headRef,
-        oldPath,
-        newPath,
+        baseRef: target.baseRef,
+        headRef: target.headRef,
+        oldPath: target.oldPath,
+        newPath: target.newPath,
       },
     });
     if (result._tag !== "Success") {

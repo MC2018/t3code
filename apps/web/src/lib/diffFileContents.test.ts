@@ -78,3 +78,106 @@ describe("createGitDiffFileContentsLoader", () => {
     await expect(load(fileDiff())).rejects.toBe(failure);
   });
 });
+
+describe("createGitDiffFileContentsLoader across repositories", () => {
+  const REPOSITORIES = [
+    {
+      root: "/workspace",
+      relativePath: "",
+      name: "workspace",
+      baseRef: "main",
+      headRef: "feature",
+    },
+    {
+      root: "/workspace/ShuffullApp",
+      relativePath: "ShuffullApp",
+      name: "ShuffullApp",
+      baseRef: "develop",
+      headRef: "expo-router",
+    },
+  ];
+
+  it("reads a nested repository's file from that repository with its own refs", async () => {
+    const getDiffFileContents = vi.fn(async () =>
+      AsyncResult.success({ oldContents: "before\n", newContents: "after\n" }),
+    );
+    const load = createGitDiffFileContentsLoader(getDiffFileContents, {
+      ...SOURCE,
+      repositories: REPOSITORIES,
+    });
+
+    await load({
+      type: "change",
+      name: "b/ShuffullApp/app/index.tsx",
+    } as FileDiffMetadata);
+
+    expect(getDiffFileContents).toHaveBeenCalledWith({
+      environmentId: "environment-1",
+      input: {
+        cwd: "/workspace/ShuffullApp",
+        sourceKind: "branch-range",
+        changeType: "change",
+        baseRef: "develop",
+        headRef: "expo-router",
+        oldPath: "app/index.tsx",
+        newPath: "app/index.tsx",
+      },
+    });
+  });
+
+  it("keeps working-tree expansion comparing against the repository's HEAD", async () => {
+    const getDiffFileContents = vi.fn(async () =>
+      AsyncResult.success({ oldContents: "before\n", newContents: "after\n" }),
+    );
+    const load = createGitDiffFileContentsLoader(getDiffFileContents, {
+      ...SOURCE,
+      sourceKind: "working-tree",
+      baseRef: "HEAD",
+      headRef: null,
+      repositories: REPOSITORIES,
+    });
+
+    await load({
+      type: "change",
+      name: "b/ShuffullApp/app/index.tsx",
+    } as FileDiffMetadata);
+
+    expect(getDiffFileContents).toHaveBeenCalledWith({
+      environmentId: "environment-1",
+      input: {
+        cwd: "/workspace/ShuffullApp",
+        sourceKind: "working-tree",
+        changeType: "change",
+        baseRef: "HEAD",
+        headRef: null,
+        oldPath: "app/index.tsx",
+        newPath: "app/index.tsx",
+      },
+    });
+  });
+
+  it("routes a workspace-root file to the root repository", async () => {
+    const getDiffFileContents = vi.fn(async () =>
+      AsyncResult.success({ oldContents: "before\n", newContents: "after\n" }),
+    );
+    const load = createGitDiffFileContentsLoader(getDiffFileContents, {
+      ...SOURCE,
+      repositories: REPOSITORIES,
+    });
+
+    await load({ type: "change", name: "b/README.md" } as FileDiffMetadata);
+
+    expect(getDiffFileContents).toHaveBeenCalledWith({
+      environmentId: "environment-1",
+      input: {
+        cwd: "/workspace",
+        sourceKind: "branch-range",
+        changeType: "change",
+        baseRef: "main",
+        headRef: "feature",
+        oldPath: "README.md",
+        newPath: "README.md",
+      },
+    });
+  });
+});

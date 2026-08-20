@@ -30,7 +30,7 @@ import {
   type VcsStatusInput,
   type VcsStatusResult,
 } from "@t3tools/contracts";
-import { makeGitVcsDriverCore } from "./GitVcsDriverCore.ts";
+import { diffPathPrefixArgs, makeGitVcsDriverCore } from "./GitVcsDriverCore.ts";
 import * as VcsDriver from "./VcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 
@@ -225,6 +225,24 @@ export interface GitRemoteStatusOptions {
   readonly refreshUpstream?: boolean;
 }
 
+/** One repository feeding a review diff preview. */
+export interface ReviewDiffRepository {
+  readonly root: string;
+  /** Workspace-relative POSIX path; empty for the workspace root repository. */
+  readonly relativePath: string;
+  readonly name: string;
+  /** The repository an explicit `baseRef` on the request applies to. */
+  readonly isPrimary: boolean;
+}
+
+export interface ReviewDiffPreviewRepositoryResult {
+  readonly root: string;
+  readonly relativePath: string;
+  readonly name: string;
+  readonly baseRef: string | null;
+  readonly headRef: string | null;
+}
+
 export class GitVcsDriver extends Context.Service<
   GitVcsDriver,
   {
@@ -257,6 +275,14 @@ export class GitVcsDriver extends Context.Service<
     ) => Effect.Effect<GitRangeContext, GitCommandError>;
     readonly getReviewDiffPreview: (
       input: ReviewDiffPreviewInput,
+    ) => Effect.Effect<ReviewDiffPreviewResult, GitCommandError>;
+    /**
+     * Builds one review out of several repositories, prefixing each
+     * repository's diff paths with its workspace-relative directory.
+     */
+    readonly getReviewDiffPreviewForRepositories: (
+      input: ReviewDiffPreviewInput,
+      repositories: ReadonlyArray<ReviewDiffRepository>,
     ) => Effect.Effect<ReviewDiffPreviewResult, GitCommandError>;
     readonly getReviewDiffFileContents: (
       input: ReviewDiffFileContentsInput,
@@ -865,6 +891,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           "--no-ext-diff",
           "--no-textconv",
           ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
+          ...diffPathPrefixArgs(input.pathPrefix),
           `${fromRevision}^{commit}`,
           `${input.toCheckpointRef}^{commit}`,
         ],

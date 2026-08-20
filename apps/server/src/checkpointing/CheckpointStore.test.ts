@@ -15,6 +15,7 @@ import { checkpointRefForThreadTurn } from "./Utils.ts";
 import * as CheckpointStore from "./CheckpointStore.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import * as VcsWorkspaceRepositories from "../vcs/VcsWorkspaceRepositories.ts";
 import * as ServerConfig from "../config.ts";
 
 const ServerConfigLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
@@ -22,8 +23,13 @@ const ServerConfigLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
 });
 const VcsProcessTestLayer = VcsProcess.layer.pipe(Layer.provide(NodeServices.layer));
 const VcsDriverTestLayer = VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcessTestLayer));
+const VcsWorkspaceRepositoriesTestLayer = VcsWorkspaceRepositories.layer.pipe(
+  Layer.provide(VcsDriverTestLayer),
+  Layer.provide(NodeServices.layer),
+);
 const CheckpointStoreTestLayer = CheckpointStore.layer.pipe(
   Layer.provideMerge(VcsDriverTestLayer),
+  Layer.provideMerge(VcsWorkspaceRepositoriesTestLayer),
   Layer.provideMerge(NodeServices.layer),
 );
 const TestLayer = CheckpointStoreTestLayer.pipe(
@@ -222,4 +228,74 @@ it.layer(TestLayer)("CheckpointStore.layer", (it) => {
       }),
     );
   });
+});
+
+it.layer(TestLayer)("CheckpointStore.layer multi-repository workspaces", (it) => {
+  it.effect("captures and diffs work inside a nested repository", () =>
+    Effect.gen(function* () {
+      const workspace = yield* makeTmpDir("checkpoint-store-workspace-");
+      const fileSystem = yield* FileSystem.FileSystem;
+      const nested = NodePath.join(workspace, "nested");
+      yield* fileSystem.makeDirectory(nested, { recursive: true });
+      yield* initRepoWithCommit(workspace);
+      yield* initRepoWithCommit(nested);
+
+      const checkpointStore = yield* CheckpointStore.CheckpointStore;
+      const threadId = ThreadId.make("11111111-1111-4111-8111-111111111111");
+      const baseRef = checkpointRefForThreadTurn(threadId, 0);
+      const turnRef = checkpointRefForThreadTurn(threadId, 1);
+
+      yield* checkpointStore.captureCheckpoint({ cwd: workspace, checkpointRef: baseRef });
+      // A superproject records a nested repository as a commit id, so this edit
+      // is invisible to a checkpoint taken only at the workspace root.
+      yield* writeTextFile(NodePath.join(nested, "README.md"), "# nested edit\n");
+      yield* checkpointStore.captureCheckpoint({ cwd: workspace, checkpointRef: turnRef });
+
+      const diff = yield* checkpointStore.diffCheckpoints({
+        cwd: workspace,
+        fromCheckpointRef: baseRef,
+        toCheckpointRef: turnRef,
+        ignoreWhitespace: false,
+      });
+
+      expect(diff).toContain("a/nested/README.md");
+      expect(diff).toContain("# nested edit");
+    }),
+  );
+
+  it.effect("restores a nested repository along with the workspace root", () =>
+    Effect.gen(function* () {
+      const workspace = yield* makeTmpDir("checkpoint-store-workspace-");
+      const fileSystem = yield* FileSystem.FileSystem;
+      const nested = NodePath.join(workspace, "nested");
+      yield* fileSystem.makeDirectory(nested, { recursive: true });
+      yield* initRepoWithCommit(workspace);
+      yield* initRepoWithCommit(nested);
+
+      const checkpointStore = yield* CheckpointStore.CheckpointStore;
+      const threadId = ThreadId.make("22222222-2222-4222-8222-222222222222");
+      const checkpointRef = checkpointRefForThreadTurn(threadId, 1);
+      yield* checkpointStore.captureCheckpoint({ cwd: workspace, checkpointRef });
+
+      yield* writeTextFile(NodePath.join(nested, "README.md"), "# drifted\n");
+      const restored = yield* checkpointStore.restoreCheckpoint({ cwd: workspace, checkpointRef });
+
+      expect(restored).toBe(true);
+      const contents = yield* fileSystem.readFileString(NodePath.join(nested, "README.md"));
+      expect(contents).toBe("# test\n");
+    }),
+  );
+
+  it.effect("reports a workspace holding only nested repositories as checkpointable", () =>
+    Effect.gen(function* () {
+      const workspace = yield* makeTmpDir("checkpoint-store-workspace-");
+      const fileSystem = yield* FileSystem.FileSystem;
+      const nested = NodePath.join(workspace, "app");
+      yield* fileSystem.makeDirectory(nested, { recursive: true });
+      yield* initRepoWithCommit(nested);
+
+      const checkpointStore = yield* CheckpointStore.CheckpointStore;
+      expect(yield* checkpointStore.isGitRepository(workspace)).toBe(true);
+    }),
+  );
 });

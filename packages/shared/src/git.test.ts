@@ -4,9 +4,11 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   applyGitStatusStreamEvent,
   buildTemporaryWorktreeBranchName,
+  findRepositoryForDiffPath,
   isTemporaryWorktreeBranch,
   normalizeGitRemoteUrl,
   parseGitHubRepositoryNameWithOwnerFromRemoteUrl,
+  toRepositoryRelativeDiffPath,
   WORKTREE_BRANCH_PREFIX,
 } from "./git.ts";
 
@@ -170,5 +172,44 @@ describe("applyGitStatusStreamEvent", () => {
       behindCount: 1,
       pr: null,
     });
+  });
+});
+
+describe("findRepositoryForDiffPath", () => {
+  const repositories = [
+    { relativePath: "", name: "workspace" },
+    { relativePath: "Shuffull", name: "Shuffull" },
+    { relativePath: "Shuffull/Shuffull.Metadata", name: "Shuffull/Shuffull.Metadata" },
+  ];
+
+  it("prefers the most deeply nested repository that owns the path", () => {
+    expect(
+      findRepositoryForDiffPath(repositories, "Shuffull/Shuffull.Metadata/schema.json")?.name,
+    ).toBe("Shuffull/Shuffull.Metadata");
+    expect(findRepositoryForDiffPath(repositories, "Shuffull/src/main.cs")?.name).toBe("Shuffull");
+  });
+
+  it("falls back to the workspace root repository", () => {
+    expect(findRepositoryForDiffPath(repositories, "README.md")?.name).toBe("workspace");
+  });
+
+  it("does not match a directory that merely shares a name prefix", () => {
+    expect(findRepositoryForDiffPath(repositories, "ShuffullApp/app.tsx")?.name).toBe("workspace");
+  });
+
+  it("returns null when nothing owns the path", () => {
+    expect(findRepositoryForDiffPath([{ relativePath: "alpha" }], "beta/file.txt")).toBeNull();
+  });
+});
+
+describe("toRepositoryRelativeDiffPath", () => {
+  it("strips the repository directory", () => {
+    expect(toRepositoryRelativeDiffPath({ relativePath: "Shuffull" }, "Shuffull/src/main.cs")).toBe(
+      "src/main.cs",
+    );
+  });
+
+  it("leaves root repository paths untouched", () => {
+    expect(toRepositoryRelativeDiffPath({ relativePath: "" }, "README.md")).toBe("README.md");
   });
 });

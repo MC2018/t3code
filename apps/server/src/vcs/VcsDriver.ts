@@ -31,6 +31,11 @@ export interface VcsDiffCheckpointsInput {
   readonly toCheckpointRef: CheckpointRef;
   readonly fallbackFromToHead?: boolean;
   readonly ignoreWhitespace: boolean;
+  /**
+   * Workspace-relative directory to render into the patch paths, so diffs from
+   * several repositories in one workspace stitch into a single patch.
+   */
+  readonly pathPrefix?: string;
 }
 
 export interface VcsDeleteCheckpointRefsInput {

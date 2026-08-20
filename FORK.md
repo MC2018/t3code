@@ -15,6 +15,15 @@ uploading to the same server endpoint. This is the one part that costs a native 
 is a native dependency, so it changes the Expo fingerprint and a rebase means a new APK rather than
 an OTA update.
 
+**Multi-repository workspaces.** Projects containing several git repositories can see per-repository
+changes, checkpoints, and a repository-scoped diff panel, instead of only the workspace root. Merged
+from the `multi-repo-changes` branch.
+
+Note that `fix/review-workspace-roots` is intentionally **not** merged. It is the standalone,
+upstream-worthy subset of those fixes, rewritten for a PR against upstream rather than cherry-picked,
+so it conflicts with the feature branch that already solves the same thing through the repository
+discovery service. Keep it for upstreaming; do not merge it here.
+
 The work is deliberately concentrated in new files so rebases stay cheap. Only these upstream files
 are touched:
 

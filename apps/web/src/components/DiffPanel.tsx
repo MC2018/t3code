@@ -89,6 +89,8 @@ interface CollapsedDiffFilesState {
 }
 
 const EMPTY_COLLAPSED_DIFF_FILE_KEYS: ReadonlySet<string> = new Set();
+import { computeRepositoryDiffStats, formatRepositoryDiffStat } from "./diffPanelRepositoryStats";
+
 const EMPTY_REPOSITORIES: ReadonlyArray<VcsWorkspaceRepository> = [];
 
 interface DiffPanelProps {
@@ -431,6 +433,13 @@ export default function DiffPanel({
       }),
     );
   }, [renderablePatch]);
+  // Counted from the patch already on screen, so a row can never disagree with
+  // the diff that selecting it produces.
+  const repositoryDiffStats = useMemo(
+    () => computeRepositoryDiffStats(renderableFiles, workspaceRepositories),
+    [renderableFiles, workspaceRepositories],
+  );
+
   const renderableFileEntries = useMemo(
     () =>
       renderableFiles.map((fileDiff) => ({
@@ -610,6 +619,15 @@ export default function DiffPanel({
                       onClick={() => selectRepositoryRoot(repository.root)}
                     >
                       <span className="min-w-0 truncate">{repository.name}</span>
+                      {(() => {
+                        const stat = repositoryDiffStats.get(repository.root);
+                        if (stat === undefined) return null;
+                        return (
+                          <span className="ml-auto shrink-0 pl-3 text-xs tabular-nums text-muted-foreground">
+                            {formatRepositoryDiffStat(stat)}
+                          </span>
+                        );
+                      })()}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuSubContent>
